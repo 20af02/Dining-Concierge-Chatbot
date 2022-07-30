@@ -3,6 +3,7 @@ import json
 import requests
 from requests_aws4auth import AWS4Auth
 from boto3.dynamodb.conditions import Key
+from variables import *
 
 
 region = 'us-east-1' 
@@ -39,13 +40,13 @@ def pull_sqs():
     except:
         return
     # Delete the message
-    sqs_client.delete_message(QueueUrl=queue_url, ReceiptHandle=message['ReceiptHandle'])
+    #sqs_client.delete_message(QueueUrl=queue_url, ReceiptHandle=message['ReceiptHandle'])
     return message
     
 def search_es_dynamodb(term):
     print("search term is ", term)
     query = {
-        "size": 1,
+        "size": 3,
         "query": {
             "multi_match": {
                 "query": term,
@@ -99,21 +100,33 @@ def lambda_handler(event, context):
     number_of_people = queue['MessageAttributes']['NumberOfPeople']['StringValue']
     dining_date = queue['MessageAttributes']['DiningDate']['StringValue']
     dining_time = queue['MessageAttributes']['DiningTime']['StringValue']
-    email = queue['MessageAttributes']['Email']['StringValue']
+    email = queue['MessageAttributes']['email']['StringValue']
     
     response = search_es_dynamodb(cuisine)
     print(response)
-    business_id = response[0]['business_id']
-    rating = response[0]['rating']
-    zip_code = response[0]['zip_code']
-    address = response[0]['address'].replace('[', '').replace(']', '').replace("'", '')
-    restaurant_name = response[0]['name']
-    
+    restaurant_recom = []
     reminder_message = """
-        Hello! Here are my {cuisine} restaurant suggestions for {number_of_people} people,
-        for {dining_date} at {dining_time}, {address}, {restaurant_name}. Enjoy your meal!
-    """.format(cuisine=cuisine, number_of_people=number_of_people, dining_date=dining_date,
-                dining_time=dining_time, address=address, restaurant_name=restaurant_name)
+            Hello! Here are my {cuisine} restaurant suggestions for {number_of_people} people,
+            for {dining_date} at {dining_time}: 
+            """.format(cuisine=cuisine, number_of_people=number_of_people, dining_date=dining_date,
+                dining_time=dining_time)
+    rest_list_obs = """
+    {}. {}, located at {}, """
+    previous_state_obj=""
+                
+    for i in range(len(response)):
+        business_id = response[i]['business_id']
+        rating = response[i]['rating']
+        zip_code = response[i]['zip_code']
+        address = response[i]['address'].replace('[', '').replace(']', '').replace("'", '')
+        restaurant_name = response[i]['name']
+        reminder_message+= rest_list_obs.format(i+1, restaurant_name, address)
+        previous_state_obj+=rest_list_obs.format(i+1, restaurant_name, address)
+    reminder_message=reminder_message[:-2]
+    reminder_message+= " \nEnjoy your meal!"
+        
+    
+        
     print(reminder_message)
     
     #SEND MESSAGES
@@ -127,4 +140,36 @@ def lambda_handler(event, context):
     sns.publish(TopicArn=topic_arn,
             Message=reminder_message
                                     )
+                                    
+    
+    # send previosu recommendation to dynanoDB
+    
+    prev_recommendation = """Hello! Based on your previous search for {cuisine} cuisine, you may be interested in the following restaurants:\n 
+    """.format(cuisine=cuisine)
+    
+    prev_recommendation+=previous_state_obj
+    #out_message = json.dumps({"1": prev_recommendation})
+    dynamodb = boto3.resource('dynamodb', region_name='us-east-1',
+                                  aws_access_key_id=ACCESS_KEY, aws_secret_access_key=SECRET_KEY)
+    table = dynamodb.Table('hw5_prev_state')
+    id="1" # whatever ID we use to store the state
+    try:
+        response = table.delete_item(
+            Key={
+            'id': '1'
+            }
+        )
+        resp_obj={
+                'id':'1',
+                'suggestions': prev_recommendation
+            
+        }
+        table.put_item(Item=resp_obj)
+    except:
+        print('dynamoDB insert error')
+    #with table.batch_writer() as batch:
+     #   batch.put_item(Item=prev_recommendation)
+    
+    
+    #print(out_message)
     #return response
