@@ -4,6 +4,7 @@ import requests
 from requests_aws4auth import AWS4Auth
 from boto3.dynamodb.conditions import Key
 from variables import *
+from botocore.exceptions import ClientError
 
 
 region = 'us-east-1' 
@@ -40,7 +41,7 @@ def pull_sqs():
     except:
         return
     # Delete the message
-    #sqs_client.delete_message(QueueUrl=queue_url, ReceiptHandle=message['ReceiptHandle'])
+    sqs_client.delete_message(QueueUrl=queue_url, ReceiptHandle=message['ReceiptHandle'])
     return message
     
 def search_es_dynamodb(term):
@@ -90,10 +91,55 @@ def search_es_dynamodb(term):
     
     return restaurant_info
 
+
+def send_email(recepient, message):
+    SENDER = 'jc11224@nyu.edu'
+    RECIPIENT = recepient
+    AWS_REGION = "us-east-1"
+    SUBJECT = 'Restaurant recommendation'
+    
+    BODY_TEXT = (message)
+    CHARSET = "UTF-8"
+    client = boto3.client('ses',region_name=AWS_REGION)
+    
+    # Try to send the email.
+    try:
+        #Provide the contents of the email.
+        response = client.send_email(
+            Destination={
+                'ToAddresses': [
+                    RECIPIENT,
+                ],
+            },
+            Message={
+            'Body': {
+                'Text': {
+                    'Charset': CHARSET,
+                    'Data': BODY_TEXT,
+                },
+            },
+            'Subject': {
+                'Charset': CHARSET,
+                'Data': SUBJECT,
+            },
+        },
+            Source=SENDER
+        )
+    # Display an error if something goes wrong.	
+    except ClientError as e:
+        print(e.response['Error']['Message'])
+    else:
+        print("Email sent! Message ID:"),
+        print(response['MessageId'])
+    
+
 def lambda_handler(event, context):
     
     
     queue = pull_sqs()
+    if queue is None:
+        print('No queue found')
+        return
     print(queue)
     location = queue['MessageAttributes']['location']['StringValue']
     cuisine = queue['MessageAttributes']['Cuisine']['StringValue']
@@ -131,23 +177,19 @@ def lambda_handler(event, context):
     
     #SEND MESSAGES
     topic_arn = 'arn:aws:sns:us-east-1:051792343076:chat_response_posts'
-    # list subscription
-    # subscription_list = sns.list_subscriptions_by_topic(TopicArn=topic_arn)
-    # print(subscription_list)
-    # email_sub = sns.subscribe(TopicArn=topic_arn,
-    #                       Protocol='email',
-    #                       Endpoint="{email}".format(email=email))
-    sns.publish(TopicArn=topic_arn,
-            Message=reminder_message
-                                    )
-                                    
+    # sns.publish(TopicArn=topic_arn,
+    #         Message=reminder_message
+    #                                 )
+    
+    send_email(email, reminder_message)
     
     # send previosu recommendation to dynanoDB
     
-    prev_recommendation = """Hello! Based on your previous search for {cuisine} cuisine, you may be interested in the following restaurants:\n 
-    """.format(cuisine=cuisine)
+    prev_recommendation = """Based on your previous search for {cuisine} cuisine in {location}, you may be interested in the following restaurants:\n 
+    """.format(cuisine=cuisine, location=location)
     
     prev_recommendation+=previous_state_obj
+    prev_recommendation=prev_recommendation[:-2]
     #out_message = json.dumps({"1": prev_recommendation})
     dynamodb = boto3.resource('dynamodb', region_name='us-east-1',
                                   aws_access_key_id=ACCESS_KEY, aws_secret_access_key=SECRET_KEY)
@@ -167,9 +209,6 @@ def lambda_handler(event, context):
         table.put_item(Item=resp_obj)
     except:
         print('dynamoDB insert error')
-    #with table.batch_writer() as batch:
-     #   batch.put_item(Item=prev_recommendation)
+        
+    print(prev_recommendation)
     
-    
-    #print(out_message)
-    #return response
