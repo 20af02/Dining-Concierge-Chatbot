@@ -7,6 +7,8 @@ import logging
 import boto3
 import json
 from variables import *
+import re
+from boto3.dynamodb.conditions import Key
 
 logger = logging.getLogger()
 logger.setLevel(logging.DEBUG)
@@ -16,14 +18,15 @@ logger.setLevel(logging.DEBUG)
 
 
 def sendSQS(request_data):
-    sqs_client = boto3.client('sqs')
+    sqs_client = boto3.client(
+        'sqs', aws_access_key_id=ACCESS_KEY, aws_secret_access_key=SECRET_KEY)
 
     location = request_data["location"]
     cuisine = request_data["Cuisine"]
     number_of_people = request_data["NumberOfPeople"]
     dining_date = request_data["DiningDate"]
     dining_time = request_data["DiningTime"]
-    phone_number = request_data["Phonenumber"]
+    email = request_data["email"]
 
     message_attributes = {
         "location": {
@@ -46,9 +49,9 @@ def sendSQS(request_data):
             'DataType': 'String',
             'StringValue': dining_time
         },
-        "Phonenumber": {
-            'DataType': 'Number',
-            'StringValue': phone_number
+        "email": {
+            'DataType': 'String',
+            'StringValue': email
         }
     }
     body = ('Resturant slots')
@@ -134,12 +137,18 @@ def isvalid_date(date):
         return False
 
 
-def validate_dining_suggestions(location, cuisine, number_of_people, dining_date, dining_time, phone_number):
+def valid_email(email):
+    regex = r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b'
+    if(re.fullmatch(regex, email)):
+        return True
+    return False
+
+
+def validate_dining_suggestions(location, cuisine, number_of_people, dining_date, dining_time, email):
 
     # Locations
-
     locations = ['manhattan']
-    cuisines = ['italian', 'japanese']
+    cuisines = ['chinese', 'indian', 'italian', 'japanese', 'korean', 'mex']
     if location is not None and location.lower() not in locations:
         return build_validation_result(False,
                                        'location',
@@ -186,11 +195,11 @@ def validate_dining_suggestions(location, cuisine, number_of_people, dining_date
             if ctime.hour >= hour and ctime.minute > minute:
                 return build_validation_result(False, 'DiningTime', 'Please select a time in the future.')
 
-    # Phonenumber
-    if phone_number is not None and not phone_number.isnumeric():
-        if len(phone_number) != 10:
-            return build_validation_result(False, 'Phonenumber', '{} is not a valid phone number,'
-                                           'please enter a valid phone number'.format(phone_number))
+    # email
+    if email is not None:
+        if not valid_email(email):
+            return build_validation_result(False, 'email', '{} is not a valid email,'
+                                           'please enter a valid email'.format(email))
 
     return build_validation_result(True, None, None)
 
@@ -210,7 +219,7 @@ def dining_suggestions(intent_request):
     number_of_people = slots["NumberOfPeople"]
     dining_date = slots["DiningDate"]
     dining_time = slots["DiningTime"]
-    phone_number = slots["Phonenumber"]
+    email = slots["email"]
     source = intent_request['invocationSource']
 
     request_data = {
@@ -219,8 +228,9 @@ def dining_suggestions(intent_request):
         "NumberOfPeople": number_of_people,
         "DiningDate": dining_date,
         "DiningTime": dining_time,
-        "Phonenumber": phone_number
+        "email": email
     }
+
     output_session_attributes = intent_request['sessionAttributes'] if intent_request['sessionAttributes'] is not None else {
     }
     output_session_attributes['requestData'] = json.dumps(request_data)
@@ -231,7 +241,7 @@ def dining_suggestions(intent_request):
         slots = get_slots(intent_request)
 
         validation_result = validate_dining_suggestions(
-            location, cuisine, number_of_people, dining_date, dining_time, phone_number)
+            location, cuisine, number_of_people, dining_date, dining_time, email)
         if not validation_result['isValid']:
             slots[validation_result['violatedSlot']] = None
             return elicit_slot(intent_request['sessionAttributes'],
@@ -302,6 +312,5 @@ def lambda_handler(event, context):
     # By default, treat the user request as coming from the America/New_York time zone.
     os.environ['TZ'] = 'America/New_York'
     time.tzset()
-    # logger.debug('event.bot.name={}'.format(event['bot']['name']))
 
     return dispatch(event)
