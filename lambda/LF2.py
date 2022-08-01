@@ -14,7 +14,7 @@ awsauth = AWS4Auth(credentials.access_key, credentials.secret_key, region, servi
 lexbot = boto3.client('lex-runtime')
 sns = boto3.client('sns', region_name='us-east-1')
 
-#host = 'https://search-posts-olyfhy4stfviygw2xf35znnvmi.us-east-1.es.amazonaws.com'
+
 host = 'https://search-restaurants-bqoyr5brzwpidhcw2hmff3vkai.us-east-1.es.amazonaws.com'
 index = 'restaurants'
 url = host + '/' + index + '/_search'
@@ -26,7 +26,7 @@ def pull_sqs():
         print(e)
     
     queue_url = 'https://sqs.us-east-1.amazonaws.com/219472459747/Q1'
-    #queue_url = 'https://sqs.us-east-1.amazonaws.com/051792343076/restaurants_recommendation_queue'
+    
     response = sqs_client.receive_message(
         QueueUrl=queue_url,
         AttributeNames=['All'],
@@ -176,11 +176,7 @@ def lambda_handler(event, context):
     print(reminder_message)
     
     #SEND MESSAGES
-    topic_arn = 'arn:aws:sns:us-east-1:051792343076:chat_response_posts'
-    # sns.publish(TopicArn=topic_arn,
-    #         Message=reminder_message
-    #                                 )
-    
+
     send_email(email, reminder_message)
     
     # send previosu recommendation to dynanoDB
