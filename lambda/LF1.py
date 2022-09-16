@@ -192,7 +192,7 @@ def validate_dining_suggestions(location, cuisine, number_of_people, dining_date
         ctime = datetime.datetime.now()
 
         if datetime.datetime.strptime(dining_date, "%Y-%m-%d").date() == datetime.datetime.today():
-            if ctime.hour >= hour and ctime.minute > minute:
+            if (ctime.hour >= hour and ctime.minute > minute) or ctime.hour < hour or (ctime.hour == hour and minute <= ctime.minute):
                 return build_validation_result(False, 'DiningTime', 'Please select a time in the future.')
 
     # email
